@@ -684,3 +684,233 @@ xxxProperties 封装配置文件中的相关属性 ，可以通过yaml配置文�
 
 没有生效的东西，找到它对应的start依赖导入即可
 
+
+
+### Springboot Web开发
+
+#### 静态资源导入
+
+
+
+```java
+@Override
+public void addResourceHandlers(ResourceHandlerRegistry registry) {
+if (!this.resourceProperties.isAddMappings()) {
+logger.debug("Default resource handling disabled");
+return;
+}
+addResourceHandler(registry, "/webjars/**", "classpath:/META-INF/resources/webjars/");
+addResourceHandler(registry, this.mvcProperties.getStaticPathPattern(), (registration) -> {
+registration.addResourceLocations(this.resourceProperties.getStaticLocations());
+if (this.servletContext != null) {
+ServletContextResource resource = new ServletContextResource(this.servletContext, SERVLET_LOCATION);
+registration.addResourceLocations(resource);
+}
+});
+}
+```
+
+
+
+![image-20230409152048432](SpringBoot.assets/image-20230409152048432.png)
+
+![image-20230409152155241](SpringBoot.assets/image-20230409152155241.png)
+
+
+
+在springboot 中，可以使用以下方式处理静态资源
+
++ webjars
++ public static /** resources 目录下的访问
+
+![image-20230409152532915](SpringBoot.assets/image-20230409152532915.png)
+
+![image-20230409152540663](SpringBoot.assets/image-20230409152540663.png)
+
+优先级： resources > static(默认的) > public
+
+
+
+#### 首页和图标定制
+
+```java
+private Resource getWelcomePage() {
+   for (String location : this.resourceProperties.getStaticLocations()) {
+      Resource indexHtml = getIndexHtml(location);
+      if (indexHtml != null) {
+         return indexHtml;
+      }
+   }
+   ServletContext servletContext = getServletContext();
+   if (servletContext != null) {
+      return getIndexHtml(new ServletContextResource(servletContext, SERVLET_LOCATION));
+   }
+   return null;
+}
+
+private Resource getIndexHtml(String location) {
+   return getIndexHtml(this.resourceLoader.getResource(location));
+}
+
+private Resource getIndexHtml(Resource location) {
+   try {
+      Resource resource = location.createRelative("index.html");
+      if (resource.exists() && (resource.getURL() != null)) {
+         return resource;
+      }
+   }
+   catch (Exception ex) {
+   }
+   return null;
+}
+```
+
+![image-20230409170319840](SpringBoot.assets/image-20230409170319840.png)
+
+
+
+
+
+![image-20230410103851838](SpringBoot.assets/image-20230410103851838.png)
+
+访问localhost:8080  直接默认访问到 Index.html页面
+
+
+
+#### 模板引擎 thymeleaf
+
+
+
+前端交给我们的页面是html页面，之前都是编写的jsp页面，jsp的好处就是当我们查出一些数据转发到JSP页面后，可以用jsp轻松实现数据的显示和交互，还包括能写java代码。现在使用springboot开发，首先是以jar包的方式，不是之前打包成war包，第二，嵌入式的使用Tomcat，所以SPringboot开发默认不支持jsp
+
+直接使用纯静态页面的方式不可行，springboot推荐使用模板引擎 thymeleaf
+
+![image-20230410104621528](SpringBoot.assets/image-20230410104621528.png)
+
+
+
+导入thymeleaf依赖
+
+```xml
+<dependency>
+    <groupId>org.thymeleaf</groupId>
+    <artifactId>thymeleaf-spring5</artifactId>
+</dependency>
+
+<dependency>
+    <groupId>org.thymeleaf.extras</groupId>
+    <artifactId>thymeleaf-extras-java8time</artifactId>
+
+</dependency>
+```
+
+模板引擎是以业务逻辑层和表现层分离为目的的，将规定格式的模板代码转换为业务数据的算法实现。
+
++ 它可以是一个过程代码、一个类，甚至是一个类库。不同的模板引擎其功用也不尽相同，但其基本原理都差不多。
+
+Thymeleaf是用来开发Web和独立环境项目的服务器端的Java模版引擎
+
++ Spring官方支持的服务的渲染模板中，并不包含jsp。而是Thymeleaf和 Freemarker等，而Thymeleaf与SpringMVC的视图技术，及SpringBoot的 自动化配置集成非常完美，几乎没有任何成本，你只用关注Thymeleaf的语法 即可。
+
++ 动静结合：Thymeleaf 在有网络和无网络的环境下皆可运行，即它可以让美工在浏 览器查看页面的静态效果，也可以让程序员在服务器查看带数据的动态页面效果。这是 由于它支持 html 原型，然后在 html 标签里增加额外的属性来达到模板+数据的展示 方式。浏览器解释 html 时会忽略未定义的标签属性，所以 thymeleaf 的模板可以静态 地运行；当有数据返回到页面时，Thymeleaf 标签会动态地替换掉静态内容，使页面动 态显示。
+
++ 开箱即用：它提供标准和spring标准两种方言，可以直接套用模板实现JSTL、 OGNL表达式效果，避免每天套模板、该jstl、改标签的困扰。同时开发人员也可以扩展 和创建自定义的方言。
+
++ 多方言支持：Thymeleaf 提供spring标准方言和一个与 SpringMVC 完美集成的 可选模块，可以快速的实现表单绑定、属性编辑器、国际化等功能。
+
++ 与SpringBoot完美整合：SpringBoot提供了Thymeleaf的默认配置，并且 为Thymeleaf设置了视图解析器，我们可以像以前操作jsp一样来操作Thymeleaf。代 码几乎没有任何区别，就是在模板语法上有区别。
+
+
+
+
+
+
+
+![image-20230410110533563](SpringBoot.assets/image-20230410110533563.png)
+
+
+
+编写一个controller简单测试
+
+```java
+//在templates 目录下的所有页面，稚嫩通过Controller来跳转
+//需要模板引擎的支持  thymeleaf
+@Controller
+public class indexController {
+    @RequestMapping("/test")
+    public String index(){
+        return "test";
+    }
+}
+```
+
+
+
+https://www.thymeleaf.org/doc/tutorials/3.0/usingthymeleaf.html 官方文档
+
+
+
+
+
+测试
+
+```html
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<!--所有的 html元素都可以被 thymeleaf替换接管 ，  th: 元素名-->
+<div th:text="${msg}"></div>
+<!--<h1 th:text="${msg}"></h1>-->
+</body>
+</html>
+```
+
+```java
+//在templates 目录下的所有页面，稚嫩通过Controller来跳转
+//需要模板引擎的支持  thymeleaf
+@Controller
+public class indexController {
+    @RequestMapping("/test")
+    public String test(Model model){
+        model.addAttribute("msg","springboot");
+        return "test";
+    }
+}
+```
+
+![image-20230410112452744](SpringBoot.assets/image-20230410112452744.png)
+
+
+
+
+
+**语法**
+
+![image-20230410121139881](SpringBoot.assets/image-20230410121139881.png)
+
+==test & utext==
+
+```html
+<div th:text="${msg}"></div>
+<!--<h1 th:text="${msg}"></h1>-->
+<div th:utext="${msg}"></div>
+```
+
+![image-20230410121633630](SpringBoot.assets/image-20230410121633630.png)
+
+
+
+==each==
+
+```html
+<h3 th:each="user:${users}" th:text="${user}"></h3>
+```
+
+... ...
+
+### MVC配置原理
+
