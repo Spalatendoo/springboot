@@ -914,3 +914,529 @@ public class indexController {
 
 ### MVC配置原理
 
+#### 自定义视图解析器
+
+
+
+springgboot提供了自动装配功能（可以实现很多功能的自动装配），可以自定义各种功能，包括拦截器，视图解析器等，通过 创建一个类实现WebMvcConfigurer，添加上@Configuration 不添加@EnableWebMvc 注解，否则会装配默认功能
+
+配置类一般会写在config包下
+
+如下：
+
+![image-20230410222234999](SpringBoot.assets/image-20230410222234999.png)
+
+```java
+//如果 需要diy一些定制化的功能 只要写这个组件，然后将他交给sprinboot，springboot帮我们自动装配
+//扩展springmvc配置
+@Configuration
+public class MyMvcConfig implements WebMvcConfigurer {
+    //public interface ViewResolver  实现了视图解析器接口的类，就可以把它看作视图解析器
+
+
+    @Bean
+    public ViewResolver myViewResolver(){
+        return new MyViewResolver();
+    }
+
+    //定义了一个自己的视图解析器
+    public static class MyViewResolver implements ViewResolver{
+        @Override
+        public View resolveViewName(String viewName, Locale locale) throws Exception {
+            return null;
+        }
+    }
+}
+
+```
+
+
+
+
+
+SpringBoot在自动配置很多组件的时候，先看容器中有没有用户自己配置的，如果有就用用户配置的，如果没有就用自动配置的；如果有些组件可以存在多个，比如我们的视图解析器，就将用户配置的和自己默认的组合起来
+
+
+
+控制视图跳转测试
+
+```java
+@Configuration
+public class MyMvcConfig implements WebMvcConfigurer {
+    //public interface ViewResolver  实现了视图解析器接口的类，就可以把它看作视图解析器
+
+    //视图跳转
+    @Override
+    public void addViewControllers(ViewControllerRegistry registry) {
+        registry.addViewController("/lk").setViewName("test");
+    }
+}
+```
+
+![image-20230410222548893](SpringBoot.assets/image-20230410222548893.png)
+
+在SpringBoot中，有非常多的  xxxx Coniguration ，帮助我们进行扩展配置，只要看见了这个东西，就要引起注意
+
+
+
+## 员工管理系统
+
+### 准备工作
+
+初始化一个springboot-web项目
+
+模拟一个数据库
+
+**pojo类编写**
+
+```java
+//部门
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
+public class Department {
+    private Integer id;
+    private String departmentName;
+}
+```
+
+```java
+@Data
+@NoArgsConstructor
+
+//员工
+public class Employee {
+    private Integer id;
+    private String name;
+    private String email;
+    private Integer gender;  // 0 :女 1： 男
+
+    private Department department;
+    private Date birth;
+
+    public Employee(Integer id, String name, String email, Integer gender, Department department, Date birth) {
+        this.id = id;
+        this.name = name;
+        this.email = email;
+        this.gender = gender;
+        this.department = department;
+        // 默认的创建日期
+        this.birth = new Date();
+    }
+}
+```
+
+
+
+**dao层编写**
+
+```java
+@Repository
+public class DepartmentDao {
+    //模拟数据库中的数据
+    private static Map<Integer, Department> departments = null;
+
+    static {
+        departments = new HashMap<Integer, Department>();  //创建一个部门表
+
+        departments.put(101,new Department(101,"教学部"));
+        departments.put(102,new Department(102,"市场部"));
+        departments.put(103,new Department(103,"教研部"));
+        departments.put(104,new Department(104,"运营部"));
+        departments.put(105,new Department(105,"后勤部"));
+    }
+
+
+    //数据库的操作
+    //获得所有部门信息
+    public Collection<Department> getDepatments(){
+        return departments.values();
+    }
+
+    //通过部门得到id
+    public Department getDepartmentById(Integer id){
+        return departments.get(id);
+    }
+}
+```
+
+
+
+
+
+==员工==
+
+```java
+//员工dao
+@Repository
+public class EmployeeDao {
+
+
+    //模拟数据库中的数据
+    private static Map<Integer, Employee> employees = null;
+    // 员工有所属部门
+    @Autowired
+    private DepartmentDao departmentDao;
+    static {
+        employees = new HashMap<Integer, Employee>();  //创建一个部门表
+
+        employees.put(101,new Employee(1,"lk",null,0,new Department(105,"后勤部"),null));
+        employees.put(101,new Employee(2,"hxf",null,0,new Department(104,"运营部"),null));
+        employees.put(101,new Employee(3,"zxm",null,0,new Department(103,"教研部"),null));
+        employees.put(101,new Employee(4,"myn",null,0,new Department(102,"市场部"),null));
+        employees.put(101,new Employee(5,"gpx",null,0,new Department(101,"教学部"),null));
+    }
+
+
+    //数据库的操作
+    //主键自增
+    private static Integer initId = 6;
+
+    //增加员工
+    public void save(Employee employee){
+        if (employee.getId() == null){
+            employee.setId(initId++);
+        }
+
+        employee.setDepartment(departmentDao.getDepartmentById(employee.getDepartment().getId()));
+
+        employees.put(employee.getId(),employee);
+    }
+
+    //查看全部员工信息
+    public Collection<Employee> getAll(){
+        return employees.values();
+    }
+
+    //通过id查员工
+    public Employee getEmployeeById(Integer id){
+        return employees.get(id);
+    }
+
+    //删除员工通过id
+    public void delete(Integer id){
+        employees.remove(id);
+    }
+}
+```
+
+### 首页配置
+
+所有的静态页面使用themleaf模板引擎，需要配置上去
+
+
+
+MVC配置类中可以自定义配置访问路径
+
+![image-20230421095047599](SpringBoot.assets/image-20230421095047599.png)
+
+
+
+
+
+### 页面国际化
+
+适配切换中英文
+
+![image-20230421095205829](SpringBoot.assets/image-20230421095205829.png)
+
+**国际化配置文件** — i18n
+
+![image-20230421104334433](SpringBoot.assets/image-20230421104334433.png)
+
+
+
+![image-20230421104344542](SpringBoot.assets/image-20230421104344542.png)
+
+
+
+index页面绑定调用国际化配置文件参数
+
+
+
+
+
+**自定义配置resolveLocale类**
+
+
+
+继承实现了`LocaleResolver`接口
+
+![image-20230421103524638](SpringBoot.assets/image-20230421103524638.png)
+
+`AcceptHeaderLocaleResolver` 实现了`LocaleResolver`接口，`resolveLocale`方法进行判断，如果存在默认的国家地区，就走默认的，没有的话就从`request`请求中解析出国家地区
+
+
+
+==自定义LocaleResolver==
+
+```java
+public class MyLocaleResolver implements LocaleResolver {
+    @Override
+    public Locale resolveLocale(HttpServletRequest request) {
+        //获取请求中的语言参数
+        String language = request.getParameter("language");
+
+        System.out.println("debug===>"+ language);
+        Locale locale = Locale.getDefault(); //如果没有就使用默认的
+        //如果请求的连接携带了参数
+        if (!StringUtils.isEmpty(language)){
+            String[] split = language.split("_");
+            //国家，地区
+            locale = new Locale(split[0], split[1]);
+        }
+        return locale;
+
+    }
+
+    @Override
+    public void setLocale(HttpServletRequest request, HttpServletResponse response, Locale locale) {
+
+    }
+}
+```
+
+从请求页面中的**language**参数解析得到要显示的语言
+
+![image-20230421103915835](SpringBoot.assets/image-20230421103915835.png)
+
+
+
+
+
+**MyMvcConfig中绑定注册Bean**
+
+![image-20230421104505050](SpringBoot.assets/image-20230421104505050.png)
+
+
+
+### 登录功能
+
+需求：判断用户名和密码，登陆成功跳转到系统首页，失败则报错
+
+
+
+首页 dashboard.css ![image-20230421110656001](SpringBoot.assets/image-20230421110656001.png)
+
+
+
+编写loginController
+
+```java
+@Controller
+public class LoginController {
+    @RequestMapping("/user/login")
+
+    public String login(@RequestParam("username") String username, @RequestParam("password") String password, Model model){
+
+        //具体的业务
+        if (!StringUtils.isEmpty(username)&& "123456".equals(password)){
+            return "redirect:/main.html";
+        }else {
+            //告诉用户登录失败
+            model.addAttribute("msg","用户名密码错误");
+            return "index";
+        }
+
+    }
+}
+```
+
+
+
+一些细节：
+
++ ![image-20230421111024440](SpringBoot.assets/image-20230421111024440.png)
+
+通过 url`.../main.html`也能访问到 dashboard.css 首页
+
+登陆成功后自动跳转的url如果不进行映射，url就会比较复杂
+
+![image-20230421111208354](SpringBoot.assets/image-20230421111208354.png)
+
+![image-20230421111225045](SpringBoot.assets/image-20230421111225045.png)
+
+所以需要当登陆成功后，直接跳转到指定配置好的url `.../main.html`
+
+![image-20230421111318383](SpringBoot.assets/image-20230421111318383.png)
+
+![image-20230421111334548](SpringBoot.assets/image-20230421111334548.png)
+
++ 用户名密码验证失败后index页面提示 “用户名密码错误”，在controller中，通过model向页面传送一个 `msg`，前端显示也应该判断`msg`是否为空，如果为空，就是登陆成功或者还没有登录，这时不应该显示 `用户名密码错误`，因此有以下一段代码进行判断显示
+
+  ![image-20230421111622647](SpringBoot.assets/image-20230421111622647.png)
+
+这里如果不进行判断，业务逻辑其实也说的通，这里加这个判断逻辑看起来好像是多余的，因为登陆成功直接跳转页面，而登录失败才会向页面传msg，当没有登陆失败或者没登录时，msg并不存在，页面当然也不会无缘无故显示`用户名密码错误` 
+
+
+
++ 目前登录的问题就是即使不登录，我直接访问也可以进入 dashboard 页面，因此要加一个登录拦截器，
+
+
+
+### 登录拦截器
+
+编写一个登录拦截器类
+
+实现`HandlerInterceptor`接口，
+
+登录成功后，会存在一个**session**，利用`session`判断是否用拦截器拦截
+
+```java
+public class LoginHandlerInterceptor implements HandlerInterceptor {
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        //登录成功后，应该有用户的session
+        Object loginUser = request.getSession().getAttribute("loginUser");
+
+        if (loginUser == null){
+            //没有登录
+            request.setAttribute("msg","没权限，请先登录");
+            request.getRequestDispatcher("/index.html").forward(request,response);
+            return false;
+        }else {
+            return true;
+        }
+    }
+
+
+}
+```
+
+
+
+在loginController中传入session
+
+![image-20230421163217712](SpringBoot.assets/image-20230421163217712.png)
+
+
+
+`MyMvcConfig`中添加一个注册拦截器的方法
+
+```java
+@Override
+public void addInterceptors(InterceptorRegistry registry) {
+    registry.addInterceptor(new LoginHandlerInterceptor()).addPathPatterns("/**").excludePathPatterns("/index.html","/","/user/login","/css/*","/js/**","/img/**");
+}
+```
+
+
+
+
+
+### 展示员工列表（查）
+
+![image-20230422095621849](SpringBoot.assets/image-20230422095621849.png)
+
+
+
+前端几个注意点：
+
++ 红色标签属于公共部分，可以用`th:fragment`将每一块抽取出来，当作独立的组件，然后再用`th:replace`标签调用组件。公共部分可以另外单独写一个`commons.html`文件，这样前端代码量会小很多
++ ![image-20230422100403640](SpringBoot.assets/image-20230422100403640.png)
+
++ ②部分，应该实现点那个标签哪个标签高亮，这就需要添加一个判断：
+
+![image-20230422100605674](SpringBoot.assets/image-20230422100605674.png)
+
+![image-20230422100641835](SpringBoot.assets/image-20230422100641835.png)
+
++ 显示员工列表部分，
+
+  ![image-20230422100844697](SpringBoot.assets/image-20230422100844697.png)
+
+上边是头部，下边是主体部分，性别显示加一个判断就好
+
+
+
+**EmployeeController编写**
+
+```java
+@Controller
+public class EmployeeController {
+    @Autowired
+    EmployeeDao employeeDao;
+    @RequestMapping("/emps")
+    public String list(Model model){
+        Collection<Employee> employees = employeeDao.getAll();
+        model.addAttribute("emps",employees);
+        return "/emp/list";
+
+    }
+}
+```
+
+### 添加员工
+
+![image-20230422104341496](SpringBoot.assets/image-20230422104341496.png)
+
+员工展示页面，左上角添加一个 `添加员工`按钮，点击跳转到增加员工信息页面，post方法提交
+
+![image-20230422104439528](SpringBoot.assets/image-20230422104439528.png)
+
+
+
+```java
+@PostMapping("/emp")
+public String addEmp(Employee employee){
+    System.out.println("save =>" + employee);
+
+    //添加的操作 forward
+    employeeDao.save(employee); //调用底层业务方法保存员工信息
+    return "redirect:/emps";
+}
+```
+
+### 修改员工信息
+
+```java
+//去员工的修改页面
+@GetMapping("/emp/{id}")
+public String toUpdateEmp(@PathVariable("id") Integer id, Model model){
+    //查出原来的数据
+    Employee employee = employeeDao.getEmployeeById(id);
+    model.addAttribute("emp",employee);
+    //查出所有部门的信息
+    Collection<Department> depatments = departmentDao.getDepatments();
+    model.addAttribute("departments",depatments);
+    return "emp/update";
+
+}
+@PostMapping("/updateEmp")
+public String updateEmp(Employee employee){
+    System.out.println("update==>"+ employee);
+    employeeDao.save(employee);
+    return "redirect:/emps";
+}
+```
+
+### 删除员工
+
+```java
+//删除员工
+@GetMapping("/delemp/{id}")
+public String deleteEmp(@PathVariable("id") int id){
+    employeeDao.delete(id);
+    return "redirect:/emps";
+}
+```
+
+
+
+==404处理和注销==
+
+springboot中直接再/tmplates/error下写404.html就可以，报错404时，直接跳转到该页面
+
+
+
+注销的controller: 无非就是清楚session 然后跳转到登录i页面
+
+```java
+    //注销
+    @RequestMapping("/user/logout")
+    public String logout(HttpSession session){
+        session.invalidate();
+        return "redirect:/index.html";
+    }
+}
+```
