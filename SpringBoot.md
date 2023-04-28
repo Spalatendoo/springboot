@@ -1440,3 +1440,718 @@ springboot中直接再/tmplates/error下写404.html就可以，报错404时，�
     }
 }
 ```
+
+
+
+
+
+### 整合JDBC
+
+引入jdbc依赖
+
+```xml
+<!--JDBC-->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-jdbc</artifactId>
+</dependency>
+```
+
+
+
+编写配置文件 `application.yaml`，连接数据库
+
+```java
+spring:
+  datasource:
+    username: root
+    password: root
+    # 假如时区报错，增加一个时区的配置就Ok 了  serverTimezone=UTC
+    url: jdbc:mysql://localhost:3306/mybatis?userUnicode=true&characterEncoding=utf-8
+    driver-class-name: com.mysql.cj.jdbc.Driver
+```
+
+SpringBoot已经默认自动配置
+
+编写一个测试类
+
+```java
+@SpringBootTest
+class Springboot04DateApplicationTests {
+    @Autowired
+    DataSource dataSource;
+    @Test
+    void contextLoads() throws SQLException {
+        //查看以下默认的数据源  class com.zaxxer.hikari.HikariDataSource
+        System.out.println(dataSource.getClass());
+
+
+        //获得数据库连接
+        Connection connection = dataSource.getConnection();
+        System.out.println(connection);
+
+        //  xxxxTemplate : springboot 已经配置好的模板bean ，拿来即用
+        connection.close();
+    }
+
+}
+```
+
+测试输出 默认的数据源是`hikari`
+
+可以通过源码看到， `DataSourceAutoConfiguration.java`类中配置的自动导入hikari
+
+![image-20230427105117441](SpringBoot.assets/image-20230427105117441.png)
+
+
+
+Hikari 被称为javaWeb当前速度最快的数据源
+
+
+
+但然，也可以在配置文件中手动配置其他数据源
+
+> JDBCTemplate
+
+1、有了数据源(com.zaxxer.hikari.HikariDataSource)，然后可以拿到数据库连接(java.sql.Connection)，有了连接，就可以使用原生的 JDBC 语句来操作数据库；
+
+2、即使不使用第三方第数据库操作框架，如 MyBatis等，Spring 本身也对原生的JDBC 做了轻量级的封装，即JdbcTemplate。
+
+3、数据库操作的所有 CRUD 方法都在 JdbcTemplate 中。
+
+4、Spring Boot 不仅提供了默认的数据源，同时默认已经配置好了 JdbcTemplate 放在了容器中，程序员只需自己注入即可使用
+
+5、JdbcTemplate 的自动配置是依赖 org.springframework.boot.autoconfigure.jdbc 包下的 JdbcTemplateConfiguration 类
+
+```java
+@RestController
+public class JDBCController {
+    @Autowired
+    JdbcTemplate jdbcTemplate;
+
+    //查询数据库的所有信息
+    //没有实体类，数据库中的东西怎么获取？ Map
+    @GetMapping("/userlist")
+    public List<Map<String, Object>> userlist(){
+        String sql = "select * from mybatis.user";
+        List<Map<String, Object>> maps = jdbcTemplate.queryForList(sql);
+        return maps;
+    }
+    @GetMapping("/addUser")
+    public String addUser(){
+        String sql = "insert into mybatis.user(id,name,pwd) values (8,'hxd','122345')";
+        jdbcTemplate.update(sql);
+        return "update-ok";
+    }
+
+    @GetMapping("/updateUser/{id}")
+    public String updateUser(@PathVariable("id") int id){
+        String sql = "update mybatis.user set name = ?,pwd = ? where id =" + id;
+
+        //封装
+        Object[] objects = new Object[2];
+        objects[0]  = "小鸣2";
+        objects[1] = "cxsfv";
+        jdbcTemplate.update(sql,objects);
+        return "update ok";
+
+    }
+
+
+}
+```
+
+
+
+
+
+### 整合Druid
+
+在配置文件`application.yaml`中手动配置其他数据源
+
+![image-20230427105546223](SpringBoot.assets/image-20230427105546223.png)
+
+
+
+去编写一个测试类，测试数据源是否配置成功
+
+```java
+@SpringBootTest
+class Springboot04DateApplicationTests {
+    @Autowired
+    DataSource dataSource;
+    @Test
+    void contextLoads() throws SQLException {
+        //查看以下默认的数据源  class com.zaxxer.hikari.HikariDataSource
+        System.out.println(dataSource.getClass());
+
+
+        //获得数据库连接
+        Connection connection = dataSource.getConnection();
+        System.out.println(connection);
+
+        //  xxxxTemplate : springboot 已经配置好的模板bean ，拿来即用
+        connection.close();
+    }
+
+}
+```
+
+![image-20230427105650639](SpringBoot.assets/image-20230427105650639.png)
+
+
+
+Druid其他参数配置Springboot是需要手动配置的
+
+```xml
+#Spring Boot 默认是不注入这些属性值的，需要自己绑定
+#druid 数据源专有配置
+
+
+initialSize: 5
+minIdle: 5
+maxActive: 20
+maxWait: 60000
+timeBetweenEvictionRunsMillis: 60000
+minEvictableIdleTimeMillis: 300000
+validationQuery: SELECT 1 FROM DUAL
+testWhileIdle: true
+testOnBorrow: false
+testOnReturn: false
+poolPreparedStatements: true
+
+#配置监控统计拦截的filters，stat:监控统计、log4j：日志记录、wall：防御sql注入
+#如果允许时报错  java.lang.ClassNotFoundException: org.apache.log4j.Priority
+#则导入 log4j 依赖即可，Maven 地址：https://mvnrepository.com/artifact/log4j/log4j
+
+filters: stat,wall,log4j
+maxPoolPreparedStatementPerConnectionSize: 20
+useGlobalDataSourceStat: true
+connectionProperties: druid.stat.mergeSql=true;druid.stat.slowSqlMillis=500
+```
+
+
+
+Druid其他功能：**后台监控**&**过滤器**
+
+```java
+@Configuration
+public class DruidConfig {
+    @Bean
+    @ConfigurationProperties(prefix = "spring.datasource")
+    public DataSource druidDataSource(){
+        return new DruidDataSource();
+    }
+
+    //后台监控 相当于web.xml，ServletRegistrationBean
+    //因为Springboot内置了servlet容器，所以没有web.xml，替代方法： ServletRegistrationBean
+    @Bean
+    public ServletRegistrationBean statViewServlet(){
+        ServletRegistrationBean<StatViewServlet> bean = new ServletRegistrationBean<>(new StatViewServlet(), "/druid/*");
+        //后台需要有人登录，
+        HashMap<String, String> initParameters = new HashMap<>();
+        //增加配置
+        initParameters.put("loginUsername","admin");  //登录key是固定的 loginUsername loginPassword
+        initParameters.put("loginPassword","123456");
+
+        //允许谁可以访问
+        initParameters.put("allow","");
+        bean.setInitParameters(initParameters);  //设置初始化参数
+        return bean;
+
+
+    }
+
+    //filter
+    public FilterRegistrationBean webStartFiler(){
+        FilterRegistrationBean bean = new FilterRegistrationBean();
+
+        bean.setFilter(new WebStatFilter());
+
+        //可以过滤哪些请求
+        HashMap<String,String> initParameters = new HashMap<>();
+
+        //以下东西不进行统计
+        initParameters.put("exclusions","*.js,*.css,/druid/*");
+        bean.setInitParameters(initParameters);
+        return bean;
+    }
+
+}
+```
+
+通过访问 `localhost:8080/druid`(这个是在写`DruidConfig`时设置的)
+
+![image-20230427110049828](SpringBoot.assets/image-20230427110049828.png)
+
+
+
+进入监控后台
+
+![image-20230427110115121](SpringBoot.assets/image-20230427110115121.png)
+
+执行sql语句，可以在SQL监控中清楚看到执行日志
+
+![image-20230427110200387](SpringBoot.assets/image-20230427110200387.png)
+
+
+
+
+
+### 整合mybatis
+
+**导入依赖**
+
+```xml
+<dependency>
+    <groupId>org.mybatis.spring.boot</groupId>
+    <artifactId>mybatis-spring-boot-starter</artifactId>
+    <version>2.1.3</version>
+</dependency>
+```
+
+
+
+**配合数据库连接信息**
+
+```properties
+spring.datasource.username=root
+spring.datasource.password=root
+spring.datasource.url=jdbc:mysql://localhost:3306/mybatis?userUnicode=true&characterEncoding=utf-8
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+```
+
+
+
+**编写pojo**
+
+```java
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class User {
+    private int id;
+
+    private String name;
+
+    private String pwd;
+}
+```
+
+**编写mapper**
+
+```java
+@Mapper
+//这个注解表示了这时一个mybatis Mapper类
+@Repository
+public interface UserMapper {
+    List<User> queryUserList();
+
+    User queryUserById(int id);
+
+    int addUser(User user);
+
+    int updateUser(User user);
+
+    int deleteUser(int id);
+}
+```
+
+**对应的mapper.xml**
+
+```xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lk.mapper.UserMapper">
+    <select id="queryUserList" resultType="User">
+        select * from mybatis.user;
+    </select>
+    <select id="queryUserById" resultType="User">
+        select * from mybatis.user where id = #{id}
+    </select>
+    <insert id="addUser" parameterType="User">
+        insert into mybatis.user (id, name, pwd) VALUES (#{id},#{name},#{pwd})
+    </insert>
+    <update id="updateUser" parameterType="User">
+        update mybatis.user set name=#{name},pwd=#{pwd} where id = #{id}
+    </update>
+    <delete id="deleteUser" parameterType="int">
+        delete from mybatis.user where id = #{id}
+    </delete>
+
+</mapper>
+```
+
+
+
+**编写Controller**
+
+```java
+@RestController
+public class UserController {
+    @Autowired
+    private UserMapper userMapper;
+    @GetMapping("/queryUserList")
+    public List<User> queryUserList(){
+        List<User> userList = userMapper.queryUserList();
+        for (User user : userList) {
+            System.out.println(user);
+        }
+        return userList;
+    }
+    @GetMapping("/queryUserById")
+    public User queryUserById(int id){
+        User user = userMapper.queryUserById(id);
+        return user;
+    }
+    @GetMapping("/addUser")
+    public String addUser(){
+        userMapper.addUser(new User(9,"yyz","1234"));
+        return  "ok";
+    }
+    @GetMapping("/updateUser")
+    public String updateUser(){
+        userMapper.updateUser(new User(9,"yyx","123444"));
+        return "ok";
+    }
+    @GetMapping("/deleteUser")
+    public String deleteUser(){
+        userMapper.deleteUser(9);
+        return "ok";
+    }
+
+}
+```
+
+
+
+
+
+## SpringSecurity
+
+过滤器 拦截器等
+
+
+
+两个安全框架 shiro  SpringSecurity
+
+一个认证 一个授权
+
+
+
+### 环境搭建
+
+新建一个springboot web项目，
+
+导入静态资源
+
+![image-20230428191314172](SpringBoot.assets/image-20230428191314172.png)
+
+编写一个controller去控制页面跳转访问资源‘
+
+```java
+@Controller
+public class RouterController {
+    @RequestMapping({"/" , "/index"})
+    public String index(){
+        return "index";
+
+    }
+    @RequestMapping("/toLogin")
+    public String toLogin(){
+        return "views/lonin";
+
+    }
+
+    @RequestMapping("/level1/{id}")
+    public String level1(@PathVariable("id") int id){
+        return "views/level1/"+id;
+    }
+
+    @RequestMapping("/level2/{id}")
+    public String level2(@PathVariable("id") int id){
+        return "views/level2/"+id;
+
+    }
+
+    @RequestMapping("/level3/{id}")
+    public String level3(@PathVariable("id") int id){
+        return "views/level3/"+id;
+
+    }
+}
+```
+
+
+
+
+
+访问测试看页面效果
+
+![image-20230428191437580](SpringBoot.assets/image-20230428191437580.png)
+
+
+
+### 用户认证和授权
+
+AOP 横切的思想去实现授权认证
+
+Spring Security 是针对Spring项目的安全框架，也是Spring Boot底层安全模块默认的技术选型，他可以实现强大的Web安全控制，对于安全控制，我们仅需要引入 spring-boot-starter-security 模块，进行少量的配置，即可实现强大的安全管理！
+
+![image-20230428191712106](SpringBoot.assets/image-20230428191712106.png)
+
+
+
+==导依赖包==
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-security</artifactId>
+</dependency>
+```
+
+![image-20230428192348250](SpringBoot.assets/image-20230428192348250.png)
+
+
+
+
+
+
+
+6.0.3版本的Security
+
+![image-20230428194302291](SpringBoot.assets/image-20230428194302291.png)
+
+自定义一个Config  继承重写后，访问页面直接跳到登陆页面，在这之前并没有设置登录请求验证，如何解决？
+
+
+
+先按照视频中的来，后面真正做项目需要用到时再仔细看文档
+
+
+
+视频中版本
+
+```java
+@EnableWebSecurity
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+    @Override
+    public void configure(HttpSecurity http) throws Exception {
+        //首页所有人可以访问，功能页只有对应有权限的人才能访问
+		//请求授权的规则
+        http.authorizeHttpRequests()
+                .antMatchers("/").permitAll()
+                .antMatchers("/level1/**").hasRole("vip1")
+                .antMatchers("/level2/**").hasRole("vip2")
+                .antMatchers("/level3/**").hasRole("vip3");
+
+    }
+}
+```
+
+点击![image-20230428195017061](SpringBoot.assets/image-20230428195017061.png)
+
+这些表单，会报403错误
+
+![image-20230428194904678](SpringBoot.assets/image-20230428194904678.png)
+
+没有权限会自动跳到login页面，但是之前并没有去配置login'页面，  `http.formlogin`做了这件事情 
+
+为什么会跳到login页面 -->看源码
+
+![image-20230428200658045](SpringBoot.assets/image-20230428200658045.png)
+
+
+
+**测试认证**
+
+```java
+@EnableWebSecurity
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+    //授权
+    @Override
+    public void configure(HttpSecurity http) throws Exception {
+        //首页所有人可以访问，功能页只有对应有权限的人才能访问
+
+        http.authorizeHttpRequests()
+                .antMatchers("/").permitAll()
+                .antMatchers("/level1/**").hasRole("vip1")
+                .antMatchers("/level2/**").hasRole("vip2")
+                .antMatchers("/level3/**").hasRole("vip3");
+
+        //没有权限 默认会到登录页面
+        http.formLogin();
+    }
+    //认证
+    //在Spring Security5.0+ 中，新增了很多加密方法
+    @Override
+    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+        //这些数据正常应该从数据库中读
+        auth.inMemoryAuthentication().passwordEncoder(new BCryptPasswordEncoder())
+                .withUser("lk").password(new BCryptPasswordEncoder().encode("123456")).roles("vip2","vip3")
+                .and()
+                .withUser("root").password(new BCryptPasswordEncoder().encode("123456")).roles("vip1","vip2","vip3");
+    }
+}
+```
+
+
+
+
+
+通过用户 `lk 123456`登录后，由于只认证了 "vip3"和"vip2"，因此 只能访问`/level3/*` 和 `/level2/*`下的页面 ，访问 `/level3/*`仍会报403错误，但是`root`用户有`vip1`权限，因此`root`用户可以访问 `/level1/*`
+
+
+
+### 注销及权限控制
+
+注销功能实现很简单：
+
+```java
+//注销
+http.logout().deleteCookies("remove").invalidateHttpSession(true).logoutSuccessUrl("/");
+```
+
+![image-20230428204848007](SpringBoot.assets/image-20230428204848007.png)
+
+注销后自动给跳转到首页
+
+
+
+登录后进入首页，如`lk`用户进入首页，仍会看到vip1的内容，如何实现用户登录后只能看到自己应该看到的内容？
+
+通过 thymleaf-security的整合依赖包在`index.html`中实现
+
+导入依赖
+
+```java
+<dependency>
+    <groupId>org.thymeleaf.extras</groupId>
+    <artifactId>thymeleaf-extras-springsecurity5</artifactId>
+    <version>3.0.4.RELEASE</version>
+</dependency>
+```
+
+
+
+以下代码实现了所需功能
+
+![image-20230428212726958](SpringBoot.assets/image-20230428212726958.png)
+
+
+
+
+
+![image-20230428212821763](SpringBoot.assets/image-20230428212821763.png)
+
+
+
+
+
+### 记住我和首页定制
+
+![image-20230428213004149](SpringBoot.assets/image-20230428213004149.png)
+
+
+
+![image-20230428212955245](SpringBoot.assets/image-20230428212955245.png)
+
+勾选后关掉页面再次进入`localhost:8080`页面，直接登录上次登录的用户
+
+检查页面`cookie`可以看到，上次登录的用户
+
+![image-20230428213225650](SpringBoot.assets/image-20230428213225650.png)
+
+![image-20230428213234618](SpringBoot.assets/image-20230428213234618.png)
+
+这个方法产生的cookie默认保存两周
+
+
+
+另外就是，登录页面是源码中默认提供的`/login` ，如果自己写了一个登陆页面，点击登录跳转到自己的登陆页面，
+
+就需要另外设置跳转的页面
+
+如之前编写了`Controller`
+
+![image-20230428215340494](SpringBoot.assets/image-20230428215340494.png)
+
+要实现登录跳转到`/toLogin`访问views目录下的`login.html`
+
+```java
+//没有权限 默认会到登录页面，如果想跳转到自己设计的登录页面，需要设置一下
+http.formLogin().loginPage("/toLogin").usernameParameter("user").passwordParameter("pwd").loginProcessingUrl("/login");
+```
+
+额外设置参数就行，需要注意的就是前后端接收传递的参数名称需要一致，源码注释了默认的用户名和密码参数，如下
+
+![image-20230428215603227](SpringBoot.assets/image-20230428215603227.png)
+
+设置成user 和 pwd 后，页面传递的参数就需要写成对应的，而不能再写成 username 和 password了
+
+
+
+`login.html`中
+
+![image-20230428215714225](SpringBoot.assets/image-20230428215714225.png)
+
+
+
+同样的道理，在登陆页面的`记住我`功能按钮，也需要另外设置前后端传递的参数名字
+
+![image-20230428215811812](SpringBoot.assets/image-20230428215811812.png)
+
+![image-20230428215828094](SpringBoot.assets/image-20230428215828094.png)
+
+
+
+`http.formLogin().loginProcessingUrl()`设置了登录页面的url处理，之前设置了登陆页面为`/toLogin`，因此编写的页面需要action跳转的页面参数也是`/toLogin`,如果想要替换之前的`/login`就需要另外如此设置
+
+![image-20230428220103862](SpringBoot.assets/image-20230428220103862.png)
+
+![image-20230428220120345](SpringBoot.assets/image-20230428220120345.png)
+
+登录页面也一样对应上
+
+访问的时候url还是/toLogin ,这个url参数处理只是为了前后端对应上
+
+
+
+## Shiro
+
+官网：https://shiro.apache.org/
+
+### 简介
+
+==什么是shiro==
+
+`Shiro`是一个功能强大且易于使用的Java安全框架，它执行身份验证、授权、加密和会话管理。使用Shiro易于理解的API，您可以快速轻松地保护任何应用程序—从最小的移动应用程序到最大的web和企业应用程序
+
+==核心架构==
+
+![image-20230428223613307](SpringBoot.assets/image-20230428223613307.png)
+
++ `Subject`即主体，外部应用与subject进行交互，subject记录了当前的操作用户，将用户的概念理解为当前操作的主体。外部程序通过subject进行认证授权，而subject是通过SecurityManager安全管理器进行认证授权
+
++ `SecurityManager`即安全管理器，对全部的subject进行安全管理，它是shiro的核心，负责对所有的subject进行安全管理。通过SecurityManager可以完成subject的认证、授权等，实质上SecurityManager是通过Authenticator进行认证，通过Authorizer进行授权，通过SessionManager进行会话管理等
+
+  `SecurityManager`是一个接口，继承了Authenticator, Authorizer, SessionManager这三个接口
+
++ `Authenticator`即认证器，对用户身份进行认证，Authenticator是一个接口，shiro提供ModularRealmAuthenticator实现类，通过ModularRealmAuthenticator基本上可以满足大多数需求，也可以自定义认证器
+
++ `Authorizer`即授权器，用户通过认证器认证通过，在访问功能时需要通过授权器判断用户是否有此功能的操作权限
+
++ `Realm`即领域，相当于datasource数据源，securityManager进行安全认证需要通过Realm获取用户权限数据，比如：如果用户身份数据在数据库那么realm就需要从数据库获取用户身份信息
+
+  ==不要把realm理解成只是从数据源取数据，在realm中还有认证授权校验的相关代码==
+
++ `sessionManager`即会话管理，shiro框架定义了一套会话管理，它不依赖web容器的[session](https://so.csdn.net/so/search?q=session&spm=1001.2101.3001.7020)，所以shiro可以使用在非web应用上，也可以将分布式应用的会话集中在一点管理，此特性可使它实现单点登录
++ `SessionDAO`即会话dao，是对session会话操作的一套接口，比如要将session存储到数据库，可以通过jdbc将会话存储到数据库
++ `CacheManager`即缓存管理，将用户权限数据存储在缓存，这样可以提高性能
++ `Cryptography`即密码管理，shiro提供了一套加密/解密的组件，方便开发。比如提供常用的散列、加/解密等功能。
+
+
+
