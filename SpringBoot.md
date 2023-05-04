@@ -2128,7 +2128,11 @@ http.formLogin().loginPage("/toLogin").usernameParameter("user").passwordParamet
 
 ==什么是shiro==
 
-`Shiro`是一个功能强大且易于使用的Java安全框架，它执行身份验证、授权、加密和会话管理。使用Shiro易于理解的API，您可以快速轻松地保护任何应用程序—从最小的移动应用程序到最大的web和企业应用程序
+`Shiro`是一个功能强大且易于使用的Java安全框架，它执行身份验证、授权、加密和会话管理。使用Shiro易于理解的API，可以快速轻松地保护任何应用程序—从最小的移动应用程序到最大的web和企业应用程序
+
+spring中有spring security (原名Acegi)，是一个权限框架，它和spring依赖过于紧密，没有shiro使用简单。
+
+shiro不依赖于spring，shiro不仅可以实现 web应用的权限管理，还可以实现c/s系统，分布式系统权限管理，shiro属于轻量框架，越来越多企业项目开始使用shiro。
 
 ==核心架构==
 
@@ -2155,3 +2159,289 @@ http.formLogin().loginPage("/toLogin").usernameParameter("user").passwordParamet
 
 
 
+==在应用程序角度观察如何使用shiro完成工作==
+
+<img src="SpringBoot.assets/image-20230504095952725.png" alt="image-20230504095952725" style="zoom:67%;" />
+
++ Subject：主体，代表了当前“用户”，这个用户不一定是一个具体的人，与当前应用交互的任何东西都是Subject，如网络爬虫，机器人等；即一个抽象概念；所有Subject 都绑定SecurityManager，与Subject的所有交互都会委托给SecurityManager；可以把Subject认为是一个门面；SecurityManager才是实际的执行者；
+
++ SecurityManager：安全管理器；即所有与安全有关的操作都会与SecurityManager 交互；且它管理着所有Subject；可以看出它是Shiro 的核心，它负责与后边介绍的其他组件进行交互，如果学习过SpringMVC，你可以把它看成DispatcherServlet前端控制器；
+
++ Realm：域，Shiro从从Realm获取安全数据（如用户、角色、权限），就是说SecurityManager要验证用户身份，那么它需要从Realm获取相应的用户进行比较以确定用户身份是否合法；也需要从Realm得到用户相应的角色/权限进行验证用户是否能进行操作；可以把Realm看成DataSource，即安全数据源。
+
+
+
+### 快速开始
+
+https://shiro.apache.org/10-minute-tutorial.html
+
+
+
+```java
+/**
+ * Simple Quickstart application showing how to use Shiro's API.
+ *
+ * @since 0.9 RC2
+ */
+public class Quickstart {
+
+    private static final transient Logger log = LoggerFactory.getLogger(Quickstart.class);
+
+
+    public static void main(String[] args) {
+
+        // The easiest way to create a Shiro SecurityManager with configured
+        // realms, users, roles and permissions is to use the simple INI config.
+        // We'll do that by using a factory that can ingest a .ini file and
+        // return a SecurityManager instance:
+
+        // Use the shiro.ini file at the root of the classpath
+        // (file: and url: prefixes load from files and urls respectively):
+        Factory<SecurityManager> factory = new IniSecurityManagerFactory("classpath:shiro.ini");
+        SecurityManager securityManager = factory.getInstance();
+
+        // for this simple example quickstart, make the SecurityManager
+        // accessible as a JVM singleton.  Most applications wouldn't do this
+        // and instead rely on their container configuration or web.xml for
+        // webapps.  That is outside the scope of this simple quickstart, so
+        // we'll just do the bare minimum so you can continue to get a feel
+        // for things.
+        SecurityUtils.setSecurityManager(securityManager);
+
+        // Now that a simple Shiro environment is set up, let's see what you can do:
+
+        // get the currently executing user:
+        Subject currentUser = SecurityUtils.getSubject();
+
+        // Do some stuff with a Session (no need for a web or EJB container!!!)
+        Session session = currentUser.getSession();
+        session.setAttribute("someKey", "aValue");
+        String value = (String) session.getAttribute("someKey");
+        if (value.equals("aValue")) {
+            log.info("Subject => session[" + value + "]");
+        }
+
+        //判断当前用户是否被认证
+        // let's login the current user so we can check against roles and permissions:
+        if (!currentUser.isAuthenticated()) {
+
+            //令牌 ，设置记住我
+            UsernamePasswordToken token = new UsernamePasswordToken("lonestarr", "vespa");
+            token.setRememberMe(true);
+            try {
+                currentUser.login(token);  //执行登录操作
+            } catch (UnknownAccountException uae) {
+                log.info("There is no user with username of " + token.getPrincipal());
+            } catch (IncorrectCredentialsException ice) {
+                log.info("Password for account " + token.getPrincipal() + " was incorrect!");
+            } catch (LockedAccountException lae) {
+                log.info("The account for username " + token.getPrincipal() + " is locked.  " +
+                        "Please contact your administrator to unlock it.");
+            }
+            // ... catch more exceptions here (maybe custom ones specific to your application?
+            catch (AuthenticationException ae) {
+                //unexpected condition?  error?
+            }
+        }
+
+        //say who they are:
+        //print their identifying principal (in this case, a username):
+        log.info("User [" + currentUser.getPrincipal() + "] logged in successfully.");
+
+        //test a role:
+        if (currentUser.hasRole("schwartz")) {
+            log.info("May the Schwartz be with you!");
+        } else {
+            log.info("Hello, mere mortal.");
+        }
+
+        //test a typed permission (not instance-level)
+        if (currentUser.isPermitted("lightsaber:wield")) {
+            log.info("You may use a lightsaber ring.  Use it wisely.");
+        } else {
+            log.info("Sorry, lightsaber rings are for schwartz masters only.");
+        }
+
+        //a (very powerful) Instance Level permission:
+        if (currentUser.isPermitted("winnebago:drive:eagle5")) {
+            log.info("You are permitted to 'drive' the winnebago with license plate (id) 'eagle5'.  " +
+                    "Here are the keys - have fun!");
+        } else {
+            log.info("Sorry, you aren't allowed to drive the 'eagle5' winnebago!");
+        }
+
+        //all done - log out!
+        currentUser.logout();
+
+        System.exit(0);
+    }
+}
+```
+
+![image-20230504100257437](SpringBoot.assets/image-20230504100257437.png)
+
+
+
+<img src="SpringBoot.assets/image-20230504100426545.png" alt="image-20230504100426545" style="zoom: 80%;" />
+
+
+
+![image-20230504100555089](SpringBoot.assets/image-20230504100555089.png)
+
+
+
+### Springboot整合Shiro环境搭建
+
+新建一个springboot项目
+
+导入shiro依赖整合包
+
+```xml
+        <dependency>
+            <groupId>org.apache.shiro</groupId>
+            <artifactId>shiro-spring</artifactId>
+            <version>1.4.0</version>
+        </dependency>
+```
+
+`resources/templates`下添加静态资源首页`index.html`
+
+
+
+编写controller 做简单的springboot项目测试
+
+```java
+@Controller
+public class MyController {
+    @RequestMapping({"/","/index"})
+    public String toIndex(Model model){
+        model.addAttribute("msg","hello,shiro");
+        return "index";
+    }
+}
+```
+
+编写shiro的config配置
+
++ shiroFlterFactoryBean
++ defaultWebSecurityManager
++ 创建 realm 对象，需要自定义类
+
+
+
+三个核心部分，一环接一环，**从下向上编写**，
+
+首先自定义一个UserRealm类
+
+```java
+//自定义的 UserRealm
+public class UserRealm extends AuthorizingRealm {
+    //授权
+    @Override
+    protected AuthorizationInfo doGetAuthorizationInfo(PrincipalCollection principalCollection) {
+        System.out.println("执行了授权");
+        return null;
+    }
+    //认证
+    @Override
+    protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken authenticationToken) throws AuthenticationException {
+        System.out.println("执行了认证");
+        return null;
+    }
+}
+```
+
+开始写shiroConfig
+
+```java
+//创建 realm 对象，需要自定义类  1
+@Bean
+public UserRealm userRealm(){
+    return new UserRealm();
+}
+```
+
+
+
+```java
+    //defaultWebSecurityManager
+    @Bean(name = "securityManager")
+    public DefaultWebSecurityManager getDefaultWebSecurityManager(@Qualifier("userRealm") UserRealm userRealm){
+        DefaultWebSecurityManager securityManager = new DefaultWebSecurityManager();
+        //关联UserRealm
+        securityManager.setRealm(userRealm);
+        return securityManager;
+    }
+```
+
+```java
+    //shiroFilterFactoryBean
+    @Bean
+    public ShiroFilterFactoryBean getShiroFilterFactoryBean(@Qualifier("securityManager") DefaultWebSecurityManager defaultWebSecurityManager){
+        ShiroFilterFactoryBean bean = new ShiroFilterFactoryBean();
+        //设置安全管理器
+        bean.setSecurityManager(defaultWebSecurityManager);
+        return bean;
+    }
+```
+
+
+
+配置类写好后，额外添加两个静态资源，`add.html` `update.html`之后做测试用
+
+添加对应的controller
+
+```java
+@Controller
+public class MyController {
+    @RequestMapping({"/","/index"})
+    public String toIndex(Model model){
+        model.addAttribute("msg","hello,shiro");
+        return "index";
+    }
+    @RequestMapping("/user/add")
+    public String add(){
+        return "user/add";
+    }
+    @RequestMapping("/user/update")
+    public String update(){
+        return "user/update";
+    }
+}
+```
+
+### 登录拦截
+
+`getShiroFilterFactoryBean( )`方法中设置内置过滤器
+
+```java
+@Bean
+    public ShiroFilterFactoryBean getShiroFilterFactoryBean(@Qualifier("securityManager") DefaultWebSecurityManager defaultWebSecurityManager){
+        ShiroFilterFactoryBean bean = new ShiroFilterFactoryBean();
+        //设置安全管理器
+        bean.setSecurityManager(defaultWebSecurityManager);
+
+        //添加shiro的内置过滤器
+
+     /*   *   anon:无需认证就可以访问
+        *   authc:必须认证了才能访问
+        *   user:必须拥有 记住我 功能才能访问
+        *   perms：拥有对某个资源的权限才嫩访问
+        *   role：拥有某个角色权限才能访问
+        **/
+        Map<String, String> filterMap = new LinkedHashMap<>();
+        filterMap.put("/user/add","anon");
+        filterMap.put("/user/update","authc");
+
+        bean.setFilterChainDefinitionMap(filterMap);
+
+
+        return bean;
+    }
+```
+
+
+
+这时访问`/user/add`就可以直接访问，但是访问`/user/update`就需要认证，这时就需要编写一个登录页面，当访问`/user/update`页面时跳转到`login`页面
+
+![image-20230504112334750](SpringBoot.assets/image-20230504112334750.png)

@@ -1,0 +1,108 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Maven CI
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ main, '1.11.x', '1.10.x', '1.9.x' ]
+  pull_request:
+    branches: [ main, '1.11.x', '1.10.x', '1.9.x' ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
+
+      - name: Set up JDK
+        uses: actions/setup-java@5ffc13f4174014e2d4d4572b3d74c3fa61aeb2c2 # v3.11.0
+        with:
+          java-version: 11
+          distribution: temurin
+
+      - name: License Check
+        run: mvn apache-rat:check "-Drat.consoleOutput"
+
+      - name: Build with Maven
+        run: >-
+          mvn verify --show-version --errors --batch-mode --no-transfer-progress -Pdocs
+          -Dgh_user=${{ github.actor }} -Dgh_token=${{ secrets.GITHUB_TOKEN }}
+
+  build-all:
+    needs: build
+
+    strategy:
+      matrix:
+        os: [ 'ubuntu-latest', 'windows-latest', 'macOS-latest' ]
+        jdk: [ 11, 17, 19 ]
+        dist: [ 'temurin', 'adopt-openj9', 'zulu' ]
+        exclude:
+          # was already built
+          - os: 'ubuntu-latest'
+            jdk: 11
+            dist: 'temurin'
+          # exclude some builds, because MacOs builds have fewer resources available.
+          # excludes java 16 on macOS.
+          - os: 'macOS-latest'
+            jdk: 16
+          # exclude temurin on MacOS. zulu (also hotspot) and OpenJ9 are sufficient.
+          - os: 'macOS-latest'
+            dist: 'temurin'
+          # no OpenJ9 19
+          - dist: adopt-openj9
+            jdk: 19
+      fail-fast: false
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
+
+      - name: Set up JDK
+        uses: actions/setup-java@5ffc13f4174014e2d4d4572b3d74c3fa61aeb2c2 # v3.11.0
+        with:
+          java-version: ${{ matrix.jdk }}
+          distribution: ${{ matrix.dist }}
+
+      - name: Build with Maven (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: >-
+          mvn verify --show-version --errors --batch-mode --no-transfer-progress -Pdocs
+          -Dgh_user=${{ github.actor }} -Dgh_token=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build with Maven (non-Linux)
+        if: matrix.os != 'ubuntu-latest'
+        run: >-
+          mvn verify --show-version --errors --batch-mode --no-transfer-progress -Pdocs
+          -Pskip_jakarta_ee_tests
+
+      - name: Archive test run logs
+        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+        if: always()
+        with:
+          name: test-logs-${{ matrix.os }}-${{ matrix.jdk }}-${{ matrix.dist }}
+          path: |
+            **/target/failsafe-reports/*-output.txt
+            **/target/**/logs/server.log
