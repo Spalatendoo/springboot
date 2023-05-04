@@ -2445,3 +2445,243 @@ public class MyController {
 这时访问`/user/add`就可以直接访问，但是访问`/user/update`就需要认证，这时就需要编写一个登录页面，当访问`/user/update`页面时跳转到`login`页面
 
 ![image-20230504112334750](SpringBoot.assets/image-20230504112334750.png)
+
+`note: 这里map中添加键值对时，url注意"/"要加全 ，而写controller的映射路径时，最前面就不需要加"/"` 
+
+### 用户认证
+
+
+
+上面实现了访问某个页面需要拦截做登录，输入用户名和密码当然也要对其认证，
+
+
+
+编写一个controller
+
+```java
+@RequestMapping("/login")
+public String login(String username,String password,Model model){
+    //获取当前的用户
+    Subject subject = SecurityUtils.getSubject();
+    //封装用户的登录数据
+    UsernamePasswordToken token = new UsernamePasswordToken(username,password);
+    try{
+        subject.login(token);  //执行登录方法，如果没有异常就说明OK了
+        return "index";
+    }catch (UnknownAccountException e){ //用户名不存在
+        model.addAttribute("msg","用户名错误");
+        return "login";
+    }catch (IncorrectCredentialsException e ){ //密码错误
+        model.addAttribute("msg","密码错误");
+        return "login";
+    }
+
+
+}
+```
+
+![image-20230504150144718](SpringBoot.assets/image-20230504150144718.png)
+
+
+
+**Realm**相当于数据源，现在还没有连接数据库，手动创建一个**用户+密码**
+
+自定义重写UserRealm中的方法，
+
+```java
+//认证
+@Override
+protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token) throws AuthenticationException {
+    System.out.println("执行了认证");
+    //用户名，密码 从数据中取
+    String name = "root";
+    String password = "123456";
+
+    UsernamePasswordToken usertoken = (UsernamePasswordToken) token;
+    if (!usertoken.getUsername().equals(name)){
+        return null; //返回Null值，直接抛出异常 UnknownAccountException
+    }
+    // 密码认证，shiro做，密码丢给它就行
+    return new SimpleAuthenticationInfo("",password,"");
+
+
+
+}
+```
+
+### shiro整合Mybatis
+
++ 导入依赖
+
+```
+mysql-connector-java
+log4j
+druid
+mybatis-spring-boot-starter
+lombok
+```
+
++ 编写`application.yaml`配置文件，配置数据库连接
+
++ 编写操作数据库对应的mapper,service,和实体类pojo
+
+
+
+进行用户认证时，因为要在`Realm`拿数据，因此在自定义Realm中实现数据库的连接
+
+```java
+//认证
+    @Override
+    protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token) throws AuthenticationException {
+        System.out.println("执行了认证");
+        //用户名，密码 从数据中取
+
+
+        UsernamePasswordToken usertoken = (UsernamePasswordToken) token;
+
+        //连接真实的数据库
+        User user = userService.queryUserByname(usertoken.getUsername());
+        if (user ==null){
+            return null;  //UnknownAccountException
+        }
+
+
+
+
+        // 密码认证，shiro做，密码丢给它就行
+        return new SimpleAuthenticationInfo("",user.getPwd(),"");
+
+
+
+    }
+```
+
+之后进行测试，user数据库中的各个用户都能通过验证
+
+
+
+### shiro请求授权
+
+
+
+有些时候，想要设置某些页面只有部分用户可以访问到，这时候就需要添加实现请求授权的功能
+
+
+
+在`shiroConfig`中添加授权权限，
+
+![image-20230504162409441](SpringBoot.assets/image-20230504162409441.png)
+
+
+
+如果没有授权`[user:add]`就会报401错，编写一个`controller`,当没有权限访问时，跳转到报错页面
+
+```java
+@RequestMapping("/noauth")
+@ResponseBody
+public String unauthorized(){
+    return "未授权";
+}
+```
+
+同时也需要在`shiroConfig`添加对应的未授权页面跳转
+
+![image-20230504162616370](SpringBoot.assets/image-20230504162616370.png)
+
+
+
+```java
+@Override
+protected AuthorizationInfo doGetAuthorizationInfo(PrincipalCollection principalCollection) {
+    System.out.println("执行了授权");
+
+    SimpleAuthorizationInfo info = new SimpleAuthorizationInfo();
+    //info.addStringPermission("user:add");   //这一行代码直接给授权了"user:add"权限，导致后面所有用户都有权限，真正的权限应该从数据库中获取
+
+    //怎么拿到当前登录的用户对象
+    Subject subject = SecurityUtils.getSubject();
+    User currentUser = (User)subject.getPrincipal();
+
+    //设置当前用户的权限，权限从数据库中拿来
+    info.addStringPermission(currentUser.getPerms());
+    return info;
+}
+```
+
+![image-20230504162839680](SpringBoot.assets/image-20230504162839680.png)
+
+![image-20230504162918952](SpringBoot.assets/image-20230504162918952.png)
+
+![image-20230504162943983](SpringBoot.assets/image-20230504162943983.png)
+
+然后就可以通过`subject.getPrincipal()`获得User对象
+
+
+
+
+
+数据库中添加一个授权字段，![image-20230504163053895](SpringBoot.assets/image-20230504163053895.png)
+
+![image-20230504163108780](SpringBoot.assets/image-20230504163108780.png)
+
+然后通过从数据库中拿到的权限字段，实现通过权限允许
+
+
+
+
+
+### shiro整合Thymeleaf
+
+导依赖包
+
+```xml
+<!-- https://mvnrepository.com/artifact/com.github.theborakompanioni/thymeleaf-extras-shiro -->
+<dependency>
+    <groupId>com.github.theborakompanioni</groupId>
+    <artifactId>thymeleaf-extras-shiro</artifactId>
+    <version>2.0.0</version>
+</dependency>
+```
+
+
+
+登录后，页面存在两个问题：
+
++ 按照目前前端写的页面，登录按钮仍然显示
++ 用户只有其中一个或没有权限，应该根据用户所拥有的权限显示对应的访问链接
+
+
+
+效果如下
+
+![image-20230504170515571](SpringBoot.assets/image-20230504170515571.png)
+
+==**登录按钮问题**==
+
+思路：用户登录后添加一个`session`，页面进行判断，如果`session`为空，那么就显示登录按钮，如果不为空，登录按钮就不显示
+
+
+
+```java
+        Subject currentSubject = SecurityUtils.getSubject();
+        Session session = currentSubject.getSession();
+        session.setAttribute("loginUser",user);
+```
+
+这段代码实现了session的获取，应当在登录获取到当前用户时添加
+
+于是添加到了**执行认证**时的代码片段中
+
+![image-20230504170836845](SpringBoot.assets/image-20230504170836845.png)
+
+
+
+另外前端页面也应该进行一个session判断
+
+![image-20230504170913339](SpringBoot.assets/image-20230504170913339.png)
+
+==权限显示问题==
+
+导入thymeleaf整合包后，对每个权限链接进行判断
+
+![image-20230504171024200](SpringBoot.assets/image-20230504171024200.png)
